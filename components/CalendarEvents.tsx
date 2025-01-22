@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import DatePicker from "react-datepicker"
 import "react-datepicker/dist/react-datepicker.css"
+import toast, { Toaster } from "react-hot-toast"
 
 interface CalendarEvent {
   id: string
@@ -24,7 +25,6 @@ export default function CalendarEvents() {
   const [startDate, setStartDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const supabase = createClientComponentClient()
 
   useEffect(() => {
@@ -38,13 +38,11 @@ export default function CalendarEvents() {
   const fetchEvents = async () => {
     try {
       setLoading(true)
-      setError(null)
       const {
         data: { session },
       } = await supabase.auth.getSession()
       if (!session) {
-        setError("No active session")
-        return
+        throw new Error("No active session")
       }
 
       const response = await fetch(
@@ -64,7 +62,7 @@ export default function CalendarEvents() {
       setEvents(data.items || [])
     } catch (err) {
       console.error("Error fetching events:", err)
-      setError("Failed to fetch events")
+      toast.error(`Failed to fetch events: ${err instanceof Error ? err.message : "Unknown error"}`)
     } finally {
       setLoading(false)
     }
@@ -75,14 +73,14 @@ export default function CalendarEvents() {
 
     if (startDate) {
       filtered = filtered.filter((event) => {
-        const eventDate = new Date(event.start.dateTime || event.start.date)
+        const eventDate = new Date(event.start.dateTime ?? event.start.date ?? new Date())
         return eventDate >= startDate
       })
     }
 
     if (endDate) {
       filtered = filtered.filter((event) => {
-        const eventDate = new Date(event.start.dateTime || event.start.date)
+        const eventDate = new Date(event.start.dateTime ?? event.start.date ?? new Date())
         return eventDate <= endDate
       })
     }
@@ -91,10 +89,10 @@ export default function CalendarEvents() {
   }
 
   if (loading) return <div>Loading events...</div>
-  if (error) return <div>Error: {error}</div>
 
   return (
     <div className="w-full max-w-4xl">
+      <Toaster position="top-right" />
       <div className="mb-4 flex space-x-4">
         <DatePicker
           selected={startDate}
@@ -111,7 +109,7 @@ export default function CalendarEvents() {
           selectsEnd
           startDate={startDate}
           endDate={endDate}
-          minDate={startDate}
+          minDate={startDate || undefined}
           placeholderText="End Date"
           className="p-2 border rounded"
         />
@@ -136,10 +134,10 @@ export default function CalendarEvents() {
               <tr key={event.id}>
                 <td className="px-6 py-4 whitespace-no-wrap border-b border-gray-500">{event.summary}</td>
                 <td className="px-6 py-4 whitespace-no-wrap border-b border-gray-500">
-                  {new Date(event.start.dateTime || event.start.date).toLocaleString()}
+                  {new Date(event.start.dateTime ?? event.start.date ?? new Date()).toLocaleString()}
                 </td>
                 <td className="px-6 py-4 whitespace-no-wrap border-b border-gray-500">
-                  {new Date(event.end.dateTime || event.end.date).toLocaleString()}
+                  {new Date(event.end.dateTime ?? event.end.date ?? new Date()).toLocaleString()}
                 </td>
               </tr>
             ))}
