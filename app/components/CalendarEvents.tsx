@@ -1,17 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import DatePicker from "react-datepicker";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { CalendarIcon, Loader2, ChevronDown } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
-import "react-datepicker/dist/react-datepicker.css";
 import { signOut } from "@/utils/supabase/signout";
 import { useRouter } from "next/navigation";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface CalendarEvent {
   id: string;
@@ -38,23 +37,19 @@ export default function CalendarEvents() {
   const [filterType, setFilterType] = useState<FilterType>("all");
   const supabase = createClientComponentClient();
   const router = useRouter();
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isEndCalendarOpen, setIsEndCalendarOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const calendarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchEvents();
-  }, [startDate]);
+  }, [startDate, endDate, filterType]);
 
   useEffect(() => {
     filterEvents();
   }, [events, startDate, endDate, filterType]);
-
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      toast.success("Signed out successfully");
-    } catch (error) {
-      toast.error("Failed to sign out");
-    }
-  };
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -68,14 +63,28 @@ export default function CalendarEvents() {
         return;
       }
 
-      const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&timeMin=${startDate?.toISOString() || new Date().toISOString()}&fields=items(id,summary,location,start,end)`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.provider_token}`,
-          },
+      let apiUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&fields=items(id,summary,location,start,end)`;
+
+      if (filterType === "single" && startDate) {
+        const endOfDay = new Date(startDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        apiUrl += `&timeMin=${startDate.toISOString()}&timeMax=${endOfDay.toISOString()}`;
+      } else if (filterType === "between" && startDate) {
+        apiUrl += `&timeMin=${startDate.toISOString()}`;
+        if (endDate) {
+          const endOfDay = new Date(endDate);
+          endOfDay.setHours(23, 59, 59, 999);
+          apiUrl += `&timeMax=${endOfDay.toISOString()}`;
         }
-      );
+      } else {
+        apiUrl += `&timeMin=${new Date().toISOString()}`;
+      }
+
+      const response = await fetch(apiUrl, {
+        headers: {
+          Authorization: `Bearer ${session.provider_token}`,
+        },
+      });
 
       if (!response.ok) {
         throw new Error("Failed to fetch calendar events");
@@ -137,6 +146,163 @@ export default function CalendarEvents() {
     return new Date(dateTime).toLocaleString();
   };
 
+  const CustomDropdown = () => (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+        className="flex items-center justify-between w-40 px-4 py-2 bg-white border rounded-md shadow-sm hover:bg-gray-50"
+      >
+        <span>
+          {filterType === "all"
+            ? "All Events"
+            : filterType === "single"
+            ? "Single Date"
+            : "Date Range"}
+        </span>
+        <ChevronDown className="w-4 h-4" />
+      </button>
+      {isDropdownOpen && (
+        <div className="absolute z-10 w-40 mt-1 bg-white border rounded-md shadow-lg">
+          <div className="py-1">
+            {["all", "single", "between"].map((type) => (
+              <button
+                key={type}
+                className="block w-full px-4 py-2 text-left hover:bg-gray-100"
+                onClick={() => {
+                  setFilterType(type as FilterType);
+                  setIsDropdownOpen(false);
+                }}
+              >
+                {type === "all"
+                  ? "All Events"
+                  : type === "single"
+                  ? "Single Date"
+                  : "Date Range"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const CustomCalendar = ({
+    date,
+    setDate,
+    isOpen,
+    setIsOpen,
+    disabled = false,
+  }: {
+    date: Date | null;
+    setDate: (date: Date) => void;
+    isOpen: boolean;
+    setIsOpen: (isOpen: boolean) => void;
+    disabled?: boolean;
+  }) => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const currentDate = new Date();
+    const [displayMonth, setDisplayMonth] = useState(date || currentDate);
+
+    const getDaysInMonth = (date: Date) => {
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const firstDayOfMonth = new Date(year, month, 1).getDay();
+      return { daysInMonth, firstDayOfMonth };
+    };
+
+    return (
+      <div className="relative" ref={calendarRef}>
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center w-[240px] px-4 py-2 bg-white border rounded-md shadow-sm hover:bg-gray-50"
+        >
+          <CalendarIcon className="mr-2 h-4 w-4" />
+          {date ? format(date, "PPP") : "Pick a date"}
+        </button>
+
+        {isOpen && (
+          <div className="absolute z-20 mt-1 p-4 bg-white border rounded-lg shadow-lg">
+            <div className="flex justify-between mb-4">
+              <button
+                onClick={() =>
+                  setDisplayMonth(
+                    new Date(displayMonth.setMonth(displayMonth.getMonth() - 1))
+                  )
+                }
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                ←
+              </button>
+              <span className="font-semibold">
+                {format(displayMonth, "MMMM yyyy")}
+              </span>
+              <button
+                onClick={() =>
+                  setDisplayMonth(
+                    new Date(displayMonth.setMonth(displayMonth.getMonth() + 1))
+                  )
+                }
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                →
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1">
+              {days.map((day) => (
+                <div
+                  key={day}
+                  className="text-center text-sm font-medium text-gray-600"
+                >
+                  {day}
+                </div>
+              ))}
+              {Array.from({
+                length: getDaysInMonth(displayMonth).firstDayOfMonth,
+              }).map((_, i) => (
+                <div key={`empty-${i}`} />
+              ))}
+              {Array.from({
+                length: getDaysInMonth(displayMonth).daysInMonth,
+              }).map((_, i) => {
+                const dayDate = new Date(
+                  displayMonth.getFullYear(),
+                  displayMonth.getMonth(),
+                  i + 1
+                );
+                const isSelected =
+                  date && dayDate.toDateString() === date.toDateString();
+                const isDisabled = disabled && dayDate < currentDate;
+
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      if (!isDisabled) {
+                        setDate(dayDate);
+                        setIsOpen(false);
+                      }
+                    }}
+                    disabled={isDisabled}
+                    className={cn(
+                      "h-8 w-8 rounded-full",
+                      isSelected && "bg-blue-600 text-white",
+                      !isSelected && "hover:bg-gray-100",
+                      isDisabled && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <Toaster position="top-right" />
@@ -153,44 +319,29 @@ export default function CalendarEvents() {
         </CardHeader>
         <CardContent>
           <div className="mb-6 flex space-x-4 items-center">
-            <Select value={filterType} onValueChange={(value: FilterType) => setFilterType(value)}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Filter type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Events</SelectItem>
-                <SelectItem value="single">Single Date</SelectItem>
-                <SelectItem value="between">Date Range</SelectItem>
-              </SelectContent>
-            </Select>
+            <CustomDropdown />
 
-            <DatePicker
-              selected={startDate}
-              onChange={(date) => setStartDate(date)}
-              selectsStart={filterType === "between"}
-              startDate={startDate}
-              endDate={endDate}
-              placeholderText="Select Date"
-              className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
+            <CustomCalendar
+              date={startDate}
+              setDate={setStartDate}
+              isOpen={isCalendarOpen}
+              setIsOpen={setIsCalendarOpen}
             />
-            
+
             {filterType === "between" && (
-              <DatePicker
-                selected={endDate}
-                onChange={(date) => setEndDate(date)}
-                selectsEnd
-                startDate={startDate}
-                endDate={endDate}
-                minDate={startDate || undefined}
-                placeholderText="End Date"
-                className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
+              <CustomCalendar
+                date={endDate}
+                setDate={setEndDate}
+                isOpen={isEndCalendarOpen}
+                setIsOpen={setIsEndCalendarOpen}
+                disabled={true}
               />
             )}
           </div>
 
           {loading ? (
             <div className="flex justify-center items-center h-40">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+              <Loader2 className="h-8 w-8 animate-spin" />
             </div>
           ) : filteredEvents.length === 0 ? (
             <Alert>
@@ -199,39 +350,42 @@ export default function CalendarEvents() {
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <div className="relative rounded-md border">
+              <table className="w-full caption-bottom text-sm">
+                <thead className="[&_tr]:border-b">
+                  <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
                       Event
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
                       Location
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
                       Start
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
                       End
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="[&_tr:last-child]:border-0">
                   {filteredEvents.map((event) => (
-                    <tr key={event.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <tr
+                      key={event.id}
+                      className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+                    >
+                      <td className="p-4 align-middle font-medium">
                         {event.summary}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="p-4 align-middle">
                         {formatLocation(event.location)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="p-4 align-middle">
                         {formatDateTime(
                           event.start.dateTime || event.start.date
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="p-4 align-middle">
                         {formatDateTime(event.end.dateTime || event.end.date)}
                       </td>
                     </tr>
