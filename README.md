@@ -1,4 +1,3 @@
-Collecting workspace informationHere's a neat README for your Google Calendar Dashboard project:
 
 # Google Calendar Dashboard
 
