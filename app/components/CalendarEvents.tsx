@@ -5,12 +5,13 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Loader2, LogOut } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import DatePicker from "react-datepicker";
 import toast, { Toaster } from "react-hot-toast";
 import "react-datepicker/dist/react-datepicker.css";
 import { signOut } from "@/utils/supabase/signout";
 import { useRouter } from "next/navigation";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface CalendarEvent {
   id: string;
@@ -26,22 +27,25 @@ interface CalendarEvent {
   };
 }
 
+type FilterType = "all" | "single" | "between";
+
 export default function CalendarEvents() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [filteredEvents, setFilteredEvents] = useState<CalendarEvent[]>([]);
   const [startDate, setStartDate] = useState<Date | null>(new Date());
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
+  const [filterType, setFilterType] = useState<FilterType>("all");
   const supabase = createClientComponentClient();
   const router = useRouter();
 
   useEffect(() => {
     fetchEvents();
-  }, []);
+  }, [startDate]);
 
   useEffect(() => {
     filterEvents();
-  }, [events, startDate, endDate]);
+  }, [events, startDate, endDate, filterType]);
 
   const handleSignOut = async () => {
     try {
@@ -65,7 +69,7 @@ export default function CalendarEvents() {
       }
 
       const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&timeMin=${new Date().toISOString()}&fields=items(id,summary,location,start,end)`,
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&timeMin=${startDate?.toISOString() || new Date().toISOString()}&fields=items(id,summary,location,start,end)`,
         {
           headers: {
             Authorization: `Bearer ${session.provider_token}`,
@@ -92,22 +96,31 @@ export default function CalendarEvents() {
   const filterEvents = () => {
     let filtered = events;
 
-    if (startDate) {
+    if (filterType === "single" && startDate) {
       filtered = filtered.filter((event) => {
         const eventDate = new Date(
           event.start.dateTime || event.start.date || new Date()
         );
-        return eventDate >= startDate;
+        return eventDate.toDateString() === startDate.toDateString();
       });
-    }
+    } else if (filterType === "between") {
+      if (startDate) {
+        filtered = filtered.filter((event) => {
+          const eventDate = new Date(
+            event.start.dateTime || event.start.date || new Date()
+          );
+          return eventDate >= startDate;
+        });
+      }
 
-    if (endDate) {
-      filtered = filtered.filter((event) => {
-        const eventDate = new Date(
-          event.start.dateTime || event.start.date || new Date()
-        );
-        return eventDate <= endDate;
-      });
+      if (endDate) {
+        filtered = filtered.filter((event) => {
+          const eventDate = new Date(
+            event.start.dateTime || event.start.date || new Date()
+          );
+          return eventDate <= endDate;
+        });
+      }
     }
 
     setFilteredEvents(filtered);
@@ -139,26 +152,40 @@ export default function CalendarEvents() {
           </button>
         </CardHeader>
         <CardContent>
-          <div className="mb-6 flex space-x-4">
+          <div className="mb-6 flex space-x-4 items-center">
+            <Select value={filterType} onValueChange={(value: FilterType) => setFilterType(value)}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Filter type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Events</SelectItem>
+                <SelectItem value="single">Single Date</SelectItem>
+                <SelectItem value="between">Date Range</SelectItem>
+              </SelectContent>
+            </Select>
+
             <DatePicker
               selected={startDate}
               onChange={(date) => setStartDate(date)}
-              selectsStart
+              selectsStart={filterType === "between"}
               startDate={startDate}
               endDate={endDate}
-              placeholderText="Start Date"
+              placeholderText="Select Date"
               className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
             />
-            <DatePicker
-              selected={endDate}
-              onChange={(date) => setEndDate(date)}
-              selectsEnd
-              startDate={startDate}
-              endDate={endDate}
-              minDate={startDate || undefined}
-              placeholderText="End Date"
-              className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
-            />
+            
+            {filterType === "between" && (
+              <DatePicker
+                selected={endDate}
+                onChange={(date) => setEndDate(date)}
+                selectsEnd
+                startDate={startDate}
+                endDate={endDate}
+                minDate={startDate || undefined}
+                placeholderText="End Date"
+                className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
+              />
+            )}
           </div>
 
           {loading ? (
