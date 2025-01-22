@@ -153,10 +153,10 @@ export default function CalendarEvents() {
         className="flex items-center justify-between w-40 px-4 py-2 bg-white border rounded-md shadow-sm hover:bg-gray-50"
       >
         <span>
-          {filterType === "all"
-            ? "All Events"
-            : filterType === "single"
+          {filterType === "single"
             ? "Single Date"
+            : filterType === "all"
+            ? "All Events"
             : "Date Range"}
         </span>
         <ChevronDown className="w-4 h-4" />
