@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useRouter } from "next/navigation"
 import DatePicker from "react-datepicker"
 import "react-datepicker/dist/react-datepicker.css"
 import toast, { Toaster } from "react-hot-toast"
@@ -26,10 +27,21 @@ export default function CalendarEvents() {
   const [endDate, setEndDate] = useState<Date | null>(null)
   const [loading, setLoading] = useState(true)
   const supabase = createClientComponentClient()
+  const router = useRouter()
 
   useEffect(() => {
-    fetchEvents()
-  }, [])
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session) {
+        router.push("/")
+      } else {
+        fetchEvents()
+      }
+    }
+    checkSession()
+  }, [supabase, router])
 
   useEffect(() => {
     filterEvents()
@@ -134,10 +146,10 @@ export default function CalendarEvents() {
               <tr key={event.id}>
                 <td className="px-6 py-4 whitespace-no-wrap border-b border-gray-500">{event.summary}</td>
                 <td className="px-6 py-4 whitespace-no-wrap border-b border-gray-500">
-                  {new Date(event.start.dateTime ?? event.start.date ?? new Date()).toLocaleString()}
+                {new Date(event.start.dateTime ?? event.start.date ?? new Date()).toLocaleString()}
                 </td>
                 <td className="px-6 py-4 whitespace-no-wrap border-b border-gray-500">
-                  {new Date(event.end.dateTime ?? event.end.date ?? new Date()).toLocaleString()}
+                {new Date(event.end.dateTime ?? event.end.date ?? new Date()).toLocaleString()}
                 </td>
               </tr>
             ))}
